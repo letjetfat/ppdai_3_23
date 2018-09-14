@@ -1,0 +1,718 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+探索性数据分析——来自拍拍贷的业务数据
+========================================================
+背景介绍：
+拍拍贷是一家中国在线P2P金融公司，为千万互联网用户提供借贷金融服务。
+本项目拟通过拍拍贷真实的业务数据，分析贷款的去向和影响借贷利率的因素。
+
+
+0.加载最终使用的所有组件
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+library(GGally)
+library(scales)
+library(memisc)
+library(caret)
+
+```
+
+1.探索数据集
+
+```{r echo=FALSE, Load_the_Data}
+lc <- read.csv('LC.csv',fileEncoding = 'utf8')
+```
+
+1.1查看数据集的整体情况
+
+```{r}
+dim(lc)
+str(lc)
+summary(lc)
+```
+  
+  LC数据集一共有328553个对象，21个变量。
+  
+1.2 查看数据集变量类型  
+  1. ListingId：列表序号，为列表的唯一键  
+  2. 借款金额：列表成交总金额  
+  3. 借款期限：总的期数（按月计）  
+  4. 借款利率：年化利率（百分数）  
+  5. 借款成功日期：列表成交的日期。都在2015年1月1日以后  
+  6. 初始评级：列表成交时的信用评级。AAA为安全标，AA为赔标，A-F为信用等级  
+  7. 借款类型：分为“应收安全标”，“电商”，“APP闪电”，“普通”和“其他”  
+  8. 是否首标：该标是否为借款人首标  
+  9. 年龄：借款人再该列表借款成功时的年龄  
+  10. 性别：该列表借款人性别  
+  11. 手机认证：该列表借款人手机实名认证是否成功  
+  12. 户口认证：该列表借款人户口认证是否成功  
+  13. 视频认证：该列表借款人视频认证是否成功  
+  14. 学历认证：该列表借款人学历认证是否成功，成功则表示有大专及以上学历  
+  15. 征信认证：该列表借款人征信认证是否成功，成功则表示有人行征信报告  
+  16. 淘宝认证：该列表借款人淘宝认证是否成功，成功则表示为淘宝店主  
+  17. 历史成功借款次数：借款人在该列表成交之前的借款成功金额  
+  18. 历史成功借款金额：借款人在该列表成交之前的借款成功金额  
+  19. 总待还本金：借款人在该列表成交之前待还本金金额  
+  20. 历史正常还款期数：借款人在该列表成交之前的按期还款期数  
+  21. 历史逾期还款期数：借款人在该列表成交之前的预期还款期数  
+  
+2. 数据处理  
+
+  2.1 日期处理
+  
+```{r}
+lc <- separate(lc, 借款成功日期, c('year','month','day'), sep='-', remove=FALSE)
+```
+
+  将借款成功日期分开为year, month, day便于后面的分析
+
+  2.2 认证评分（1表示认证成功，0表示未认证成功）
+  
+```{r}
+lc$认证分数 <- (lc$手机认证=='成功认证') +
+  (lc$户口认证=='成功认证') +
+  (lc$视频认证=='成功认证') +
+  (lc$学历认证=='成功认证') +
+  (lc$征信认证=='成功认证') +
+  (lc$淘宝认证=='成功认证')
+```
+  
+  2.3 客户评级(A为最高等级，F为最低等级)
+  
+```{r}
+lc$初始评级 <- factor(lc$初始评级,levels=c('F','E','D','C','B','A'),ordered=T)
+```
+
+ 
+
+3. 单变量分析  
+
+  3.1.1 借款金额分析
+  
+```{r}
+summary(lc$借款金额)
+quantile(lc$借款金额, 0.95)
+```
+  
+  可以看到最小借款金额为100元，最大借款金额为500000元，中位数为3397元，
+均值为4424元，75%的借款金额在5230以下，95%的人借款金额在9000以下
+  
+  3.1.2 这里绘制借款金额的直方图，横坐标设定范围为0-10000元
+  
+```{r}
+ggplot(aes(x=借款金额),data=lc) +
+  geom_histogram(color='black', binwidth = 500)+
+  scale_x_continuous(limits=c(0,10000), breaks=seq(0,10000,1000)) +
+  ggtitle('借款金额在0-10000之间的直方图')
+```
+  
+  可以看到基本借款数最多的借款金额在3000元左右，说明借款数量普遍偏低，推测借款
+人员普遍收入较低或为学生群体
+
+  3.1.3 对借款金额进行分区间
+  
+```{r}
+lc$借款金额区间 <- cut(lc$借款金额,c(0,1000,3000,5000,10000,500000))
+levels(lc$借款金额区间)
+```
+  
+  3.2.1 借款期限分析
+  
+```{r}
+summary(lc$借款期限)
+table(lc$借款期限)
+```
+  
+  3.2.2 绘制借款期限的直方图
+  
+```{r}
+ggplot(aes(x=借款期限),data=lc) + geom_histogram(binwidth = 1)+
+  scale_x_continuous(breaks=seq(0,25,2)) + 
+  scale_y_continuous(breaks=seq(0,250000,10000)) +
+  ggtitle('借款期限情况分析')
+```
+  
+  从图中可以看到借款期限最多的为12期达到了210000人左右，其次是6期达到了85000人
+左右，然后是9期的在10000人左右，其余的借款期数都少于10000人，超过12期的人数特
+别少，说明整体来说借款期限都不是很长。
+
+  3.3.1  借款利率情况的分析
+  
+```{r}
+summary(lc$借款利率)
+table(lc$借款利率)
+```
+  
+  从表中可以得出：利率范围在6.5%到24%之间
+  
+  3.3.2 利率分布情况直方图
+  
+```{r}
+ggplot(aes(x=借款利率),data=lc) + geom_histogram(binwidth = 1)+
+  scale_x_continuous(breaks=seq(0,25,2)) + 
+  scale_y_continuous(breaks=seq(0,250000,10000)) +
+  ggtitle('借款利率情况分析')
+```
+  
+  从图中可以得出：借款利率最高为24%，但人数不是特别多，借款利率为22%的人最多，
+其次是20%和18%，其他借款利率的人数都比较少
+
+  
+  3.4.1 借款人年龄分布的分析
+  
+```{r}
+summary(lc$年龄)
+```
+  
+  可以看到借款人最小为17岁，最大为56岁，借款人平均年龄在29岁左右
+  
+  3.4.2 绘制借款人年龄直方图
+  
+```{r}
+ggplot(aes(x=年龄),data=lc) + geom_histogram(binwidth = 1,color='black') + 
+  scale_x_continuous(limits=c(17,56),breaks=seq(17,56,2)) +
+  geom_vline(xintercept = quantile(lc$年龄,0.1), linetype='dashed') + 
+  geom_vline(xintercept = quantile(lc$年龄,0.9),linetype='dashed')
+```
+  
+  从图中可以看到80%的借款人年龄在22到39岁之间
+  
+  3.4.3 借款人年龄区间划分
+  
+```{r}
+lc$年龄区间 <- cut(lc$年龄, c(15,20,25,30,35,40,45,50,56))
+```
+  
+  3.5.1 借款人性别分析
+  
+```{r}
+table(lc$性别)
+```
+ 
+ 3.5.2 绘制借款人性别直方图
+ 
+```{r}
+ggplot(aes(x=性别), data=lc) + geom_bar(width=0.6)
+```
+  
+  3.6.1 借款成功日期分析
+  
+```{r}
+year_lc <- ggplot(aes(x=year), data=lc) + geom_bar()
+month_lc <- ggplot(aes(x=month), data=lc) + geom_bar() + facet_wrap(~year)
+day_lc <- ggplot(aes(x=day), data=lc) + geom_bar()
+grid.arrange(year_lc,month_lc,day_lc,ncol=1)
+```
+  
+  从图中可以看到2016年借款标数远多于2015、2016年，然后再每年的
+从月份图上可以看到，从2015年到2016年成功数量在稳定增长，说明业务在蒸蒸日上。从
+按天绘制的柱形图上可以看出，每天的借款数量比较均衡。  
+
+  3.7.1 对认证方式进行分析
+  
+```{r}
+phone_lc <- ggplot(aes(x=手机认证),data=lc) + geom_bar()
+id_lc <- ggplot(aes(x=户口认证),data=lc) + geom_bar()
+video_lc <- ggplot(aes(x=视频认证),data=lc) + geom_bar()
+edu_lc <- ggplot(aes(x=学历认证),data=lc) + geom_bar()
+credit_lc <- ggplot(aes(x=征信认证),data=lc) + geom_bar()
+biz_lc <- ggplot(aes(x=淘宝认证),data=lc) + geom_bar()
+grid.arrange(phone_lc, id_lc, video_lc, edu_lc, credit_lc,biz_lc,ncol=3)
+```
+  
+  3.8.1 认证分数分析
+  
+```{r}
+summary(lc$认证分数)
+```
+  
+  可以看到认证分数的中位数为1分，至少有一半人只认证了一项，平均每个人只认证了
+0.8416，所以有很多人都没有经过任何认证
+
+  3.8.2 绘制认证分数直方图
+  
+```{r}
+ggplot(aes(x=认证分数),data=lc) + geom_histogram(binwidth = 0.5) +
+  scale_x_continuous(breaks=seq(0,6,1))
+```
+```{r}
+table(lc$认证分数)
+```
+  
+  从上图和上表可以看出，大部分都认证少于等于1项，认证多项的人很少。
+  
+  3.9.1 初始评级分析
+  
+```{r}
+table(lc$初始评级)
+```
+  
+  3.9.2 绘制初始评级直方图
+  
+```{r}
+ggplot(aes(x=初始评级),data=lc) +
+  geom_bar() +
+  ggtitle('初始评级情况分析')
+```
+  
+  从图中可以得出：初始评级在D/C的占大多数，其余的评级的人数都很少
+  
+  3.10.1 借款类型情况分析
+  
+```{r}
+table(lc$借款类型)
+```
+  
+  从表中可以看出：除了电商外，其他类型借款都比较多，在双变量和多变量分析时可以
+单独拿出电商类借款分析
+  
+  3.11.1 是否首标情况分析
+  
+```{r}
+table(lc$是否首标)
+```
+  
+  从表中可以得知：首标的借款在1/4左右，非首标的在3/4左右，在后续分析中可以将是
+否首标拆开分析，分析是否首标在借款方面有无差异
+  
+  
+4. 双变量分析  
+
+  4.1.1 借款金额与年龄之间的关系
+  
+```{r}
+ggplot(aes(x=年龄,y=借款金额), data= lc) +
+  geom_point(position='jitter',alpha=1/20) +
+  ggtitle('年龄与借款金额')
+```
+  
+  根据之前单变量分析借款金额时发现，绝大多数人的借款金额都在10000元以下，但从上
+图可以看到有部分借款金额特别大，这里将这两部分拆开分析
+  
+  4.1.2 将借款金额比较大的和比较小的拆开分析
+  
+```{r}
+beyond10000 <- subset(lc, 借款金额>10000)
+within10000 <- subset(lc, 借款金额<10000)
+beyond10000_plot <- ggplot(aes(x=年龄,y=借款金额), data= beyond10000) +
+  geom_point(position='jitter',alpha=1/20) +
+  ggtitle('借款金额大于10000元——年龄散点图') +
+  scale_x_continuous(breaks=seq(17,56,2)) +
+  scale_y_log10()
+within10000_plot <- ggplot(aes(x=年龄, y=借款金额),data=within10000) +
+  geom_point(position='jitter',alpha=1/20) +
+  ggtitle('借款金额小于10000元——年龄散点图') +
+  scale_x_continuous(breaks=seq(17,56,2))
+grid.arrange(beyond10000_plot,within10000_plot)
+```
+  
+  从上图可以看出在超过10000元的较大借款金额上，在不同年龄段都有一些极大值；
+  而对于低于10000元的借款金额上，可以看到20-40岁之间的人数较多，40岁以后的人数较
+少而且借款金额也有所下降。
+  
+  4.2 年龄区间与借款金额的关系
+  
+```{r}
+p2_2.1 <- ggplot(aes(x=年龄区间,y=借款金额),data=within10000) +
+  geom_boxplot() + ggtitle('借款金额小于10000元')
+
+p2_2.2 <- ggplot(aes(x=年龄区间,y=借款金额),data=beyond10000) +
+  geom_boxplot() + scale_y_log10() +
+  ggtitle('借款金额大于10000元')
+
+grid.arrange(p2_2.1,p2_2.2)
+```
+  
+  结论：
+  在较小的借款金额(小于10000元)的范围内，15-25之间增长幅度比较大，从25岁以后借
+款金额差别不是很大;
+  在较大的借款金额中，通过箱型图可以看出有一些借款金额异常大
+  
+  
+  4.1.3 不同年龄段的借款金额汇总分布情况
+  
+  按年龄进行分组汇总借款金额
+  
+```{r}
+library(dplyr)
+age_group <- group_by(lc,年龄)
+lc.by_age <- summarise(age_group,
+            mean_jine = mean(as.numeric(借款金额)),
+            sum_jine=sum(as.numeric(借款金额)),n = n())
+head(lc.by_age)
+```
+
+```{r}
+p2_1.1 <- ggplot(aes(x=年龄,y=mean_jine),data=lc.by_age) + 
+  geom_bar(stat='summary') +
+  scale_x_continuous(breaks=seq(15,60,5)) +
+  ylab('平均借款金额') +
+  ggtitle('年龄与平均借款金额')
+p2_1.2 <- ggplot(aes(x=年龄,y=sum_jine),data=lc.by_age) +
+  geom_bar(stat='summary') +
+  scale_x_continuous(breaks=seq(15,60,5)) +
+  ylab('总借款金额') +
+  ggtitle('年龄与总借款金额')
+grid.arrange(p2_1.1,p2_1.2,ncol=1)
+```
+  
+  结论：从平均借款金额上看，随着年龄的增长平均借款金额有所增长，但幅度不算很大。
+但从总借款金额上看，在20-40之间借款总额占据了大多数，反映了在20-40岁之间的用户占
+据大多数，这与前面单变量分析用户年龄的情况相符合。
+  
+  4.2.1 性别与借款金额之间的关系
+  
+  按性别进行分组
+  
+```{r}
+gender_group <- group_by(lc,性别)
+lc.by_gender <- summarise(gender_group,
+                          mean_jine = mean(as.numeric(借款金额)),
+                          sum_jine = sum(as.numeric(借款金额)))
+```
+  
+  4.2.2 按性别进行图形绘制
+  
+```{r}
+p2_2.1 = ggplot(aes(x=性别,y=mean_jine),data=lc.by_gender) +
+  geom_bar(stat='summary',width = 0.5) + ylab('平均借款金额') +
+  ggtitle('性别与平均借款金额')
+p2_2.2 = ggplot(aes(x=性别,y=sum_jine),data=lc.by_gender) +
+  geom_bar(stat='summary',width = 0.5)+ylab('总借款金额') +
+  ggtitle('性别与总借款金额')
+grid.arrange(p2_2.1,p2_2.2,ncol=1)
+```
+  
+  结论：对男女不同性别来说，平均借款金额差异不是很大，而总借款金额上男姓比女性
+要多很多
+  
+  4.3.1 初始评级与借款金额的关系
+  
+  按初始评级进行分组
+  
+```{r}
+pingji_group <- group_by(lc,初始评级)
+lc.by_pingji <- summarise(pingji_group,
+                          mean_jine = mean(as.numeric(借款金额)),
+                          sum_jine = sum(as.numeric(借款金额)))
+lc.by_pingji <- arrange(lc.by_pingji,初始评级)
+
+```
+  
+  4.3.2 绘制初始评级与借款金额之间的图形
+  
+```{r}
+p2_3.1 = ggplot(aes(x=初始评级,y=mean_jine),data=lc.by_pingji)+
+  geom_bar(stat='summary',width=0.5) + ylab('平均借款金额') +
+  ggtitle('初始评级与平均借款金额')
+p2_3.2 = ggplot(aes(x=初始评级,y=sum_jine),data=lc.by_pingji)+
+  geom_bar(stat='summary',width=0.5)+ylab('总借款金额') +
+  ggtitle('初始评级与总借款金额')
+grid.arrange(p2_3.1,p2_3.2,ncol=1)
+```
+  
+  结论：平均借款金融由大到小顺序是B,A,C,D,E,F，总借款金额顺序是C,D,B,E,A,F，因为
+单变量分析时D,C评级人数最多
+  
+  4.4.1 借款类型和借款利率的关系
+  
+```{r}
+ggplot(aes(x=借款类型,y=借款利率),data=lc) + 
+  geom_boxplot() + facet_wrap(~是否首标) + ggtitle('是否首标')
+```
+  
+  结论：不论是否首标，电商的借款利率都比较低
+  
+  4.5 借款金额与借款利率之间的关系
+```{r}
+ggplot(aes(x=借款金额,y=借款利率), data=lc) + 
+  geom_point(position='jitter',alpha=1/20) +
+  scale_x_log10() +
+  ggtitle('借款金额与利率之间的关系') +
+  geom_smooth()
+```
+  
+  从图上可知：随着借款金额的增多，利率呈现的趋势是下降的
+  
+  4.6 用户群体双变量分析
+```{r}
+total_jiekuan <- sum(within10000$借款金额)
+len_w1 = length(within10000$借款金额)
+age_qujian_group <- group_by(within10000,年龄区间)
+w1.by_age_qujian <- summarise(age_qujian_group,
+            total_percent = sum(as.numeric(借款金额))/total_jiekuan,
+            mean_jiekuan = mean(as.numeric(借款金额)),
+            n = n()/len_w1)
+p4_6.1 = ggplot(aes(x=年龄区间,y=total_percent),data=w1.by_age_qujian) + 
+  geom_bar(stat='summary',width=0.6) + 
+  labs(y='占总金额比例',title='用户群体分析')
+p4_6.2 = ggplot(aes(x=年龄区间,y=mean_jiekuan),data=w1.by_age_qujian) + 
+  geom_bar(stat='summary',width=0.6) + ylab('平均借款金额')
+p4_6.3 = ggplot(aes(x=年龄区间,y=n),data=w1.by_age_qujian) +
+  geom_bar(stat='summary',width=0.6) + ylab('人数占比')
+grid.arrange(p4_6.1,p4_6.2,p4_6.3)
+```
+  
+  结论：上图1、3可以明显看出核心用途群天实在20-40之间，不管是金额占总数比，还是
+用户数占总人数比都达到了90%以上。从图2可以看出平均借款金额随着年龄的增长是有所
+增加的，但是增长的幅度在逐渐降低。
+
+
+  
+5. 多变量分析  
+  
+  5.1.1 年龄，性别和借款金额之间的关系
+  
+```{r}
+p3_1.1 <- ggplot(aes(x=年龄,y=借款金额),data=lc) +
+  geom_line(aes(color=性别),stat='summary',fun.y=mean,size=1) + 
+  scale_x_continuous(limits=c(15,60),breaks=seq(15,60,2)) +
+  labs(y='借款金额均值')
+p3_1.2 <- ggplot(aes(x=年龄,y=借款金额),data=lc) +
+  geom_line(aes(color=性别),stat='summary',fun.y=median,size=1) + 
+  scale_x_continuous(limits=c(15,60),breaks=seq(15,60,2)) +
+  labs(y='借款金额中位数')
+p3_1.3 <- ggplot(aes(x=年龄,y=借款金额),data=lc) +
+  geom_line(aes(color=性别),stat='summary',fun.y=sum,size=1) + 
+  scale_x_continuous(limits=c(15,60),breaks=seq(15,60,2)) +
+  labs(y='借款金额总和')
+grid.arrange(p3_1.1,p3_1.2,p3_1.3)
+```
+  
+  结论:
+      从借款金额平均值上来看，男女平均借款金额相差不大，但55岁以后女性平均借款金
+额要比男姓大很多，根据前面的分析应该是个别借款金额比较大的极值影响；  
+      从借款金额中位树数上来看，男女之间差别也不是很大，但总体上随着年龄增长借款
+金额都有所增长；  
+      但从借款金额总和上来看男女差异比较大大，男姓借钱总金额比女性更多一些，但借
+钱总金额的趋势基本相同，都是先增长后降低，而且在20-40之间借钱金额比较多。
+
+       
+  5.2.1 不同年龄的用户与借款类型情况的分析
+  
+```{r}
+ggplot(aes(x=年龄,y=借款金额),data=within10000) +
+  geom_line(stat='summary',fun.y=mean)+
+  facet_wrap(~借款类型,scale='free') + ylab('平均借款金额')
+```
+  
+  结论：不同类型借款类型的平均借款金额是不同的，电商整体的平均借款金额更高一些，
+而APP闪电贷一般都比较偏低。
+  
+  5.3.1 不同年龄的用户与认证分数之间的关系
+  
+```{r}
+ggplot(aes(x=年龄,y=认证分数),data=subset(lc,认证分数>0))+
+  geom_line(aes(color=是否首标),size=1,stat='summary',fun.y=mean)+
+  scale_x_continuous(limits=c(15,60),breaks=seq(15,60,5))+
+  ggtitle('不同年龄的平均认证分数')
+```
+  
+  结论：在20-50岁之间的年龄段，首标的认证人数都低于非首标的认证分数，说明用户为
+了增加借款金额多增加额外的认证
+  
+  5.4.1 借款金额、年龄区间与初始评级之间的关系
+  
+```{r}
+ggplot(aes(x=借款金额,fill=年龄区间),data=within10000) +
+  geom_histogram(bins = 20,position =position_stack(reverse=TRUE)) +
+  facet_wrap(~初始评级,ncol=3,scales='free') +
+  scale_fill_brewer(type='qual')
+```
+  
+  结论：不同初始评分级别的借款金额有很大的不同
+  
+  5.5.1借款金额、借款利率与初始评级的关系
+  
+```{r}
+ggplot(aes(x=借款金额,y=借款利率,color=初始评级),data=within10000)+
+  geom_point()+
+  scale_color_brewer(type='seq') +
+  ggtitle('借款利率与初始评级')
+```
+  
+  结论：从整体上来看初始评分越高，借款利率越低。
+  
+  
+  5.6.1 借款金额、借款利率和认证分数之间的关系
+  
+```{r}
+ggplot(aes(x=借款金额,y=借款利率),data=lc)+
+  geom_point(aes(color=借款类型),alpha=0.8,position='jitter',size=2)+
+  scale_color_brewer(type='qual') + scale_x_log10() +
+  ggtitle('借款利率与借款类型') +
+  theme_light()
+```
+  
+  结论：APP闪电贷利率很高,但借款金额稍小。电商类利率较低，但借款金额都比较大。
+  
+
+  5.7.1 借款金额、借款利率与借款周期之间的关系
+  
+```{r}
+ggplot(aes(x=1000*round(借款金额/1000),y=借款利率,color=借款期限),data=lc) + 
+  geom_point(alpha=0.6,position='jitter') + scale_x_log10() 
+```
+  
+  结论：可以看到颜色最深在图形的下半部，说明在同等借款金额的情况下，借款期限越
+长借款利率越低
+
+
+  5.8 借款类型、初始评级、借款利率之间的关系
+```{r}
+jklx_jkll <- subset(lc,select=c(借款类型,借款利率))
+by(jklx_jkll$借款利率,jklx_jkll$借款类型,mean)
+```
+  
+```{r}
+mean_lxll <- data.frame(借款类型 = c('APP闪电','电商','普通','其他'),
+                            借款利率 = c(20.33, 16.12, 20.98, 20.50))
+
+age_qujian_rzfs_group <- group_by(lc,初始评级,借款类型)
+w1.by_age_qujian_rzqs <- summarise(age_qujian_rzfs_group,
+                                   mean_jkll = mean(as.numeric(借款利率)))
+ggplot(aes(x=初始评级,y=mean_jkll),data=w1.by_age_qujian_rzqs) + 
+  geom_bar(stat='summary')+
+  geom_hline(aes(yintercept=借款利率),data=mean_lxll,alpha=0.5, linetype=2) +
+  facet_wrap(~借款类型) + 
+  labs(y='平均借款利率',title='平均借款利率与初始评级、借款类型之间的关系')
+```
+  
+  结论：从上图，整体趋势是随着初始评级的升高，借款利率是逐渐下降的，不论在何种借
+款类型中，评级为A的借款利率都是最低的，而且在电商借款中利率较其他借款要低很多
+  
+  
+
+  
+  5.8 多变量分析的结论  
+      1.借款利率随着初始评级的升高而降低  
+      2.借款利率随着借款期限的增长而增加  
+      3.借款金额越大借款利率越低  
+      4.借款利率和借款类型相关。APP闪电借款利率较大，周期也较短而且借款期限也较  
+短。电商类借款利率相对较低，而且借款周期较长可借金额也比较大。
+    
+    
+6.利率预测
+
+```{r}
+m1 <- lm(I(借款利率)~I(借款金额),data=lc)
+m2 <- update(m1, ~.+初始评级)
+m3 <- update(m2,~.+认证分数)
+m4 <- update(m3,~.+借款类型)
+m5 <- update(m4,~.+借款期限)
+mtable(m1,m2,m3,m4,m5)
+```
+  
+  结论：除了借款金额外，其他几个因素与借款利率相关性都比较高
+  
+  
+6.1 预测
+
+```{r}
+test <- data.frame(借款金额=10000,初始评级='B', 认证分数= 3, 
+                       借款类型='电商', 借款期限 = 12)
+
+modelEstimate = predict(m5,newdata=test,
+                        interval = "prediction",level=0.95)
+modelEstimate
+```
+
+
+7. 最终成图和汇总
+绘图一：按年、月、日分析借款总体情况
+
+```{r}
+year_lc <- ggplot(aes(x=year), data=lc) + geom_bar() +
+  ggtitle('按年、月、日分析借款总体情况')
+
+month_lc <- ggplot(aes(x=month), data=lc) + geom_bar() + facet_wrap(~year)
+
+day_lc <- ggplot(aes(x=day), data=lc) + geom_bar()
+
+grid.arrange(year_lc,month_lc,day_lc,ncol=1)
+```
+
+  结论：上图反应了拍拍贷从2015年到2017年的总体业务情况，从图中可以看到从2015年到
+2016年借款数量增长迅速。从月份图上可以看到，2017年虽然只有1月份的数据，但仍然要
+比2016年最好的月份的数据还要好，因此有理由相信2017年以后的数据会更好。整体上看，
+拍拍贷的业务一直在稳定的增长，而且按天来看，基本每天的业务都很均衡。
+
+  
+绘图二：用户群体的分析
+
+```{r}
+total_jiekuan <- sum(within10000$借款金额)
+len_w1 = length(within10000$借款金额)
+age_qujian_group <- group_by(within10000,年龄区间)
+w1.by_age_qujian <- summarise(age_qujian_group,
+            total_percent = sum(as.numeric(借款金额))/total_jiekuan,
+            mean_jiekuan = mean(as.numeric(借款金额)),
+            n = n()/len_w1)
+p4_6.1 = ggplot(aes(x=年龄区间,y=total_percent),data=w1.by_age_qujian) + 
+  geom_bar(stat='summary',width=0.6) + 
+  labs(y='占总金额比例',title='用户群体分析')
+p4_6.2 = ggplot(aes(x=年龄区间,y=mean_jiekuan),data=w1.by_age_qujian) + 
+  geom_bar(stat='summary',width=0.6) + ylab('平均借款金额')
+p4_6.3 = ggplot(aes(x=年龄区间,y=n),data=w1.by_age_qujian) +
+  geom_bar(stat='summary',width=0.6) + ylab('人数占比')
+grid.arrange(p4_6.1,p4_6.2,p4_6.3)
+```
+  
+  结论：上图主要分析用户群体的情况。上图1、3可以明显看出核心用途群天实在20-40之
+间，不管是金额占总数比，还是用户数占总人数比都达到了90%以上。从图2可以看出平均
+借款金额随着年龄的增长是有所增加的，但是增长的幅度在逐渐降低。虽然相较于年龄比
+较小的用户来说，年龄较大的用户借款金额有所上升，但在用户数量上却比年龄小的用户
+少很多，因此在为了更好的发展业务，应该发展更多的年龄小的用户，同时维护好年龄较
+大的单体贡献业务较多的用户。
+
+
+  
+绘图三：借款金额、借款利率、认证分数、初始评级、借款类型之间的关系
+
+```{r}
+mean_lxll <- data.frame(借款类型 = c('APP闪电','电商','普通','其他'),
+                            借款利率 = c(20.33, 16.12, 20.98, 20.50))
+
+age_qujian_rzfs_group <- group_by(lc,初始评级,借款类型)
+w1.by_age_qujian_rzqs <- summarise(age_qujian_rzfs_group,
+                                   mean_jkll = mean(as.numeric(借款利率)))
+ggplot(aes(x=初始评级,y=mean_jkll),data=w1.by_age_qujian_rzqs) + 
+  geom_bar(stat='summary')+
+  geom_hline(aes(yintercept=借款利率),data=mean_lxll,alpha=0.5, linetype=2) +
+  facet_wrap(~借款类型) + 
+  labs(y='平均借款利率',title='平均借款利率与初始评级、借款类型之间的关系')
+```
+  
+  结论：上图主要分析借款利率与借款类型，初始评级之间的关系。
+        从整体上来看，不管哪种借款类型，借款利率都会随着初始评级的上升而有所下
+降。而且不同借款类型的平均借款利率也有所不同，从普通、其他、APP闪电贷、电商借款
+类型，借款利率逐渐下降，电商类的借款利率最低。因此应尽可能地提高初始评级并选择借
+款利率低的借款类型。
+  
+8. 反思  
+
+  8.1 整个分析的思路，是从单变量到双边在到多变量进行分析，在逐步深入的过程中
+发现问题解决问题，其中由于基础知识掌握不是很牢固，因此遇到了不少麻烦，不过好在
+有论坛可以提问，获得了不少帮助。    
+
+  8.2 在分析的过程中，发现有部分借款借款金额非常大，例如95%的人借款金额都不超过
+1万，但是有部分人的借款金额达到了50万，这部分较大的借款金额可能是录入错误，也可
+能是真实数据。在未说明情况下可以有不同的理解，因此借款均值就会有差异。实际项目分
+析时，可以把该类数据单独筛选并进行分析，或许能发现新的东西。  
+  
+  8.3 在分析的过程中，分析之前可能直观为认为借款金额与利率之间有很强烈的关系，实
+际结果却并不是。而借款类型，初始评级和认证分数和借款利率关系比较大，这与分析之前
+的猜想是有出入的。  
+  
+  8.4 在逐步深入分析的过程中，每多一次分析，都能发现新的不一样的东西。在以后的工
+作中，应该从更多的方面去尝试，站在不同的角度去分析，并且在每次分析的过程中不断改
+进，这样就能逐步提高分析内容和报告质量。  
+
